@@ -1,0 +1,127 @@
+---
+title: "TT Himalayan climbers Silge"
+author: "Jeff Grayum"
+date: "12/23/2020"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+Goal: Build a model to predict the probability of an expedition member dying or surviving, based on the person's and expedition's characteristics.  What can we learn?
+
+Loading libraries
+```{r}
+library(tidyverse)
+library(tidytuesdayR)
+library(scales)
+library(ggthemes)
+#install.packages("skimr")
+library(skimr)
+```
+
+Loading datasets.
+```{r}
+tuesdata <- tidytuesdayR::tt_load('2020-09-22')
+
+members <- tuesdata$members
+```
+
+Initial exploration.
+```{r}
+skimr::skim(members)
+
+#Notice we are missing a lot of data for for $age.  We'll use TidyModels to inpute this missing data (can just filter when columns are only missing a little bit of data). Also notice that we are trying to predict deaths, which are rare in our dataset (~1.5%).  We need to consider this when building our model.
+```
+
+
+```{r}
+members %>%
+  group_by(year = 10 * (year %/% 10)) %>%  #Essentially grouping by decade, here.
+  summarise(died = mean(died),
+            success = mean(success)) %>%
+  pivot_longer(died:success, names_to = "outcome",
+               values_to = "percent") %>%
+  ggplot(aes(year, percent, color = outcome)) +
+  geom_line(alpha = 0.7 , size = 1.5) +
+  theme_fivethirtyeight() + 
+  labs(x = "",
+       y = "",
+       color = "Outcome",
+       title = "Outcomes of every expeditions into the Himalayas") +
+  theme(axis.title = element_text(),
+        text = element_text(family = "Times New Roman")) +
+  scale_y_continuous(labels = percent)
+
+
+members %>%
+  group_by(age = 10 * (age %/% 10)) %>%  #Essentially grouping by decade, here.
+  summarise(died = mean(died),
+            success = mean(success)) %>%
+  pivot_longer(died:success, names_to = "outcome",
+               values_to = "percent") %>%
+  ggplot(aes(age, percent, color = outcome)) +
+  geom_line(alpha = 0.7 , size = 1.5) +
+  theme_fivethirtyeight() + 
+  labs(x = "Age",
+       y = "",
+       color = "Outcome",
+       title = "Outcomes of every expeditions into the Himalayas") +
+  theme(axis.title = element_text(),
+        text = element_text(family = "Times New Roman")) +
+  scale_y_continuous(labels = percent)
+```
+
+
+
+```{r}
+members %>%
+  count(success, died) #Notice that it's possible to die and have the expedition succeed.
+
+members %>%
+  count(success, died) %>%
+  group_by(success) %>%
+  mutate(percent = n/sum(n)) #Notice more people died in the failed expeditions than the successful ones.
+```
+
+
+```{r}
+members %>%
+  count(peak_name, sort = TRUE)
+
+members %>%
+  filter(!is.na(peak_name)) %>%
+  mutate(peak_name = fct_lump(peak_name, prop = 0.05)) %>%
+  count(peak_name, died)
+
+
+members %>%
+  filter(!is.na(peak_name)) %>%
+  mutate(peak_name = fct_lump(peak_name, prop = 0.05)) %>%
+  count(peak_name, died) %>%
+  group_by(peak_name) %>%
+  mutate(percent = n/sum(n)) #Notice how how "Other" is!
+```
+
+
+```{r}
+members %>%
+  filter(season != "Unknown") %>%
+  count(season, died)
+
+members %>%
+  filter(season != "Unknown") %>%
+  count(season, died) %>%
+  group_by(season) %>%
+  mutate(percent = n/sum(n))
+
+members %>%
+  filter(season != "Unknown") %>%
+  count(season, died) %>%
+  group_by(season) %>%
+  mutate(percent = n / sum(n),
+         died = case_when(died ~ "Died",
+                          TRUE ~ "Did not die")) %>%
+  ggplot(aes(season, percent, fill = season)) +
+  geom_col(show.legend = FALSE, position = "dodge", alpha = 0.8) +
+  facet_wrap(~died, scales = "free")
+```
+
