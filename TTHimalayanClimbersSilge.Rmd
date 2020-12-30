@@ -16,6 +16,11 @@ library(scales)
 library(ggthemes)
 #install.packages("skimr")
 library(skimr)
+library(tidymodels)
+library(recipes)
+library(modeldata)
+#install.packages("themis")
+library(themis)
 ```
 
 Loading datasets.
@@ -29,7 +34,7 @@ Initial exploration.
 ```{r}
 skimr::skim(members)
 
-#Notice we are missing a lot of data for for $age.  We'll use TidyModels to inpute this missing data (can just filter when columns are only missing a little bit of data). Also notice that we are trying to predict deaths, which are rare in our dataset (~1.5%).  We need to consider this when building our model.
+#Notice we are missing a lot of data for for $age.  We'll use TidyModels to impute this missing data (can just filter when columns are only missing a little bit of data). Also notice that we are trying to predict deaths, which are rare in our dataset (~1.5%).  We need to consider this when building our model.
 ```
 
 
@@ -123,5 +128,61 @@ members %>%
   ggplot(aes(season, percent, fill = season)) +
   geom_col(show.legend = FALSE, position = "dodge", alpha = 0.8) +
   facet_wrap(~died, scales = "free")
+#More deaths in winter, we will include that in our model!
+```
+
+
+```{r}
+members_df <- members %>%
+  filter(season != "Unknown") %>% 
+  select(peak_id, year, season, sex, age, citizenship, hired, success, died) %>%
+  filter(!is.na(sex), !is.na(citizenship)) %>%  #We will impute missing ages!
+  mutate(died = case_when(died ~ "died",
+                          TRUE ~ "survived")) %>%
+  mutate_if(is.character, factor) 
+
+members_df %>%
+  view()
+  
+```
+
+
+Now let's build our model, using TidyModels!
+```{r}
+
+#First, we will set our seed.
+set.seed(123)
+
+#Now, perform the initial split.
+members_split <- initial_split(members_df, strata = died)
+
+#Now, train the model.
+members_train <- training(members_split)
+
+#Finally, test the model!
+members_test <- testing(members_split)
+
+
+members_train
+
+members_test
+
+
+#Let's create a set of re-samples.  Each one of these is a cross-validation fold.
+set.seed(345)
+members_folds <- vfold_cv(members_train)
+members_folds
+```
+
+
+Now, we will do feature enginering/data pre-processing.
+```{r}
+members_rec <- recipe(died ~ ., data = members_train) %>%
+  step_medianimpute(age) %>%  #Missing age values will be imputed with median!
+  step_other(peak_id, citizneship) %>% #similar to fct_lump! Can't have too many factors in our model.
+  step_dummy(all_nominal(), ~died) %>% #turns fact/characters into nominal vars
+  step_smote(died)
+
+members_rec
 ```
 
